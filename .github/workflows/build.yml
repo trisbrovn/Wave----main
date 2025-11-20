@@ -1,0 +1,39 @@
+name: build
+
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '8'
+          cache: gradle
+
+      - name: Set short commit SHA
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Grant execute permission to Gradle wrapper
+        run: chmod +x ./gradlew
+
+      - name: Build project
+        run: ./gradlew setupCiWorkspace build
+
+      - name: Rename build artifact
+        run: mv build/libs/WavePlusPlusPlus-*.jar build/libs/WavePlusPlusPlus-build.jar
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WaveClient
+          path: build/libs/WavePlusPlusPlus-build.jar
