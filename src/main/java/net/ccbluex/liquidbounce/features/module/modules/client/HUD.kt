@@ -61,7 +61,7 @@ object HUD : Module() {
             "red", "blue", "green", "aqua",
             "pink", "white", "black", "yellow",
             "orange", "liquidbounceplusplusplus",
-            "lb_banner"
+            "gothaj"
         ),
         "client"
     )
