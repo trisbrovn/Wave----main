@@ -1,160 +1,128 @@
-package net.ccbluex.liquidbounce.features.module.modules.world;
+package net.ccbluex.liquidbounce.features.module.modules.world
 
-import net.ccbluex.liquidbounce.event.*;
-import net.ccbluex.liquidbounce.features.module.Module;
-import net.ccbluex.liquidbounce.features.module.ModuleCategory;
-import net.ccbluex.liquidbounce.features.module.ModuleInfo;
-import net.ccbluex.liquidbounce.utils.MovementUtils;
-import net.ccbluex.liquidbounce.value.BoolValue;
-import net.ccbluex.liquidbounce.value.FloatValue;
-import net.ccbluex.liquidbounce.value.ListValue;
-import net.minecraft.block.Block;
-import net.minecraft.block.material.Material;
-import net.minecraft.item.ItemBlock;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.*;
-import org.lwjgl.input.Mouse;
+import net.ccbluex.liquidbounce.event.*
+import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.features.module.ModuleCategory
+import net.ccbluex.liquidbounce.features.module.ModuleInfo
+import net.ccbluex.liquidbounce.utils.MovementUtils
+import net.ccbluex.liquidbounce.value.BoolValue
+import net.ccbluex.liquidbounce.value.FloatValue
+import net.ccbluex.liquidbounce.value.ListValue
+import net.minecraft.block.material.Material
+import net.minecraft.item.ItemBlock
+import net.minecraft.util.*
 
-import java.util.ArrayList;
+@ModuleInfo(name = "KTBlockFly", description = "Augustus KT Port", category = ModuleCategory.WORLD)
+class KTBlockFly : Module() {
 
-@ModuleInfo(name = "KTBlockFly", description = "Augustus KT Scaffold Port", category = ModuleCategory.WORLD)
-public class KTBlockFly extends Module {
+    private val yawSpeed = FloatValue("YawSpeed", 60.0f, 0.0f, 180.0f)
+    private val pitchSpeed = FloatValue("PitchSpeed", 60.0f, 0.0f, 180.0f)
+    private val adStrafe = BoolValue("AdStrafe", true)
+    private val silentMode = ListValue("SilentMode", arrayOf("Switch", "Spoof", "None"), "Spoof")
+    private val timerSpeed = FloatValue("Timer", 1.0f, 0.1f, 4.0f)
 
-    // --- Cài đặt giống hệt bản Augustus KT ---
-    private final FloatValue yawSpeed = new FloatValue("YawSpeed", 60.0f, 0.0f, 180.0f);
-    private final FloatValue pitchSpeed = new FloatValue("PitchSpeed", 60.0f, 0.0f, 180.0f);
-    private final BoolValue rayCast = new BoolValue("RayCast", true);
-    private final BoolValue adStrafe = new BoolValue("AdStrafe", true);
-    private final BoolValue moonWalk = new BoolValue("MoonWalk", false);
-    private final BoolValue moveFix = new BoolValue("MoveFix", true);
-    private final ListValue silentMode = new ListValue("SilentMode", new String[]{"Switch", "Spoof", "None"}, "Spoof");
-    private final FloatValue timerSpeed = new FloatValue("Timer", 1.0f, 0.1f, 4.0f);
-    private final BoolValue sameY = new BoolValue("SameY", false);
+    private var rots = floatArrayOf(0f, 0f)
+    private var targetPos: BlockPos? = null
+    private var targetFacing: EnumFacing? = null
 
-    private float[] rots = new float[2];
-    private BlockPos targetPos;
-    private EnumFacing targetFacing;
-    private double lastY;
-
-    @Override
-    public void onEnable() {
-        if (mc.thePlayer == null) return;
-        lastY = mc.thePlayer.posY;
-        rots[0] = mc.thePlayer.rotationYaw;
-        rots[1] = mc.thePlayer.rotationPitch;
+    override fun onEnable() {
+        mc.thePlayer?.let {
+            rots[0] = it.rotationYaw
+            rots[1] = it.rotationPitch
+        }
     }
 
-    @Override
-    public void onDisable() {
-        mc.timer.timerSpeed = 1.0f;
+    override fun onDisable() {
+        mc.timer.timerSpeed = 1.0f
     }
 
     @EventTarget
-    public void onMotion(MotionEvent event) {
-        mc.timer.timerSpeed = timerSpeed.get();
+    fun onMotion(event: MotionEvent) {
+        mc.timer.timerSpeed = timerSpeed.get()
 
-        if (event.getEventState() == EventState.PRE) {
-            // Logic tìm block của KT
-            findBlockLogic();
+        if (event.eventState == EventState.PRE) {
+            findBlockLogic()
 
-            if (targetPos != null) {
-                // Tính toán rotation mượt (Augustus Style)
-                float[] targetRots = getTargetRotations();
-                rots[0] = updateRotation(rots[0], targetRots[0], yawSpeed.get());
-                rots[1] = updateRotation(rots[1], targetRots[1], pitchSpeed.get());
+            targetPos?.let { pos ->
+                val targetRots = getTargetRotations(pos)
+                rots[0] = updateRotation(rots[0], targetRots[0], yawSpeed.get())
+                rots[1] = updateRotation(rots[1], targetRots[1], pitchSpeed.get())
 
-                event.setYaw(rots[0]);
-                event.setPitch(rots[1]);
-                mc.thePlayer.renderYawOffset = rots[0];
-                mc.thePlayer.rotationYawHead = rots[0];
+                event.yaw = rots[0]
+                event.pitch = rots[1]
+                mc.thePlayer.renderYawOffset = rots[0]
+                mc.thePlayer.rotationYawHead = rots[0]
             }
         }
     }
 
     @EventTarget
-    public void onUpdate(UpdateEvent event) {
-        // Thực hiện đặt block (Place Logic)
-        if (targetPos != null && targetFacing != null) {
-            int slot = getBlockSlot();
-            if (slot == -1) return;
+    fun onUpdate(event: UpdateEvent) {
+        val pos = targetPos
+        val facing = targetFacing ?: return
+        if (pos == null) return
 
-            int oldSlot = mc.thePlayer.inventory.currentItem;
-            
-            // Xử lý Silent Mode
-            if (silentMode.get().equalsIgnoreCase("Switch")) {
-                mc.thePlayer.inventory.currentItem = slot;
-            }
+        val slot = getBlockSlot()
+        if (slot == -1) return
 
-            // Đặt block
-            if (mc.playerController.onPlayerRightClick(mc.thePlayer, mc.theWorld, mc.thePlayer.inventory.getStackInSlot(slot), targetPos, targetFacing, getHitVec())) {
-                mc.thePlayer.swingItem();
-            }
+        val oldSlot = mc.thePlayer.inventory.currentItem
 
-            if (silentMode.get().equalsIgnoreCase("Switch")) {
-                mc.thePlayer.inventory.currentItem = oldSlot;
-            }
+        if (silentMode.get().equals("Switch", true)) {
+            mc.thePlayer.inventory.currentItem = slot
         }
 
-        // Logic AD-Strafe của KT
+        val hitVec = Vec3(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5)
+        
+        if (mc.playerController.onPlayerRightClick(mc.thePlayer, mc.theWorld, mc.thePlayer.inventory.getStackInSlot(slot), pos, facing, hitVec)) {
+            mc.thePlayer.swingItem()
+        }
+
+        if (silentMode.get().equals("Switch", true)) {
+            mc.thePlayer.inventory.currentItem = oldSlot
+        }
+
         if (adStrafe.get() && MovementUtils.isMoving()) {
-            doADStrafe();
+            mc.thePlayer.movementInput.moveStrafe = if (mc.thePlayer.ticksExisted % 2 == 0) 0.5f else -0.5f
         }
     }
 
-    private void findBlockLogic() {
-        double yPos = sameY.get() ? lastY - 1 : mc.thePlayer.posY - 1;
-        BlockPos pos = new BlockPos(mc.thePlayer.posX, yPos, mc.thePlayer.posZ);
-
-        if (mc.theWorld.getBlockState(pos).getBlock().getMaterial() == Material.air) {
-            for (EnumFacing side : EnumFacing.values()) {
-                if (side == EnumFacing.UP) continue;
-                BlockPos neighbor = pos.offset(side);
-                if (!(mc.theWorld.getBlockState(neighbor).getBlock().getMaterial() == Material.air)) {
-                    targetPos = neighbor;
-                    targetFacing = side.getOpposite();
-                    return;
+    private fun findBlockLogic() {
+        val pos = BlockPos(mc.thePlayer.posX, mc.thePlayer.posY - 1.0, mc.thePlayer.posZ)
+        if (mc.theWorld.getBlockState(pos).block.material == Material.air) {
+            for (side in EnumFacing.values()) {
+                if (side == EnumFacing.UP) continue
+                val neighbor = pos.offset(side)
+                if (mc.theWorld.getBlockState(neighbor).block.material != Material.air) {
+                    targetPos = neighbor
+                    targetFacing = side.opposite
+                    return
                 }
             }
         }
     }
 
-    private float[] getTargetRotations() {
-        // Mô phỏng hàm positionRotation của Augustus
-        Vec3 hitVec = getHitVec();
-        double diffX = hitVec.xCoord - mc.thePlayer.posX;
-        double diffY = hitVec.yCoord - (mc.thePlayer.getEntityBoundingBox().minY + mc.thePlayer.getEyeHeight());
-        double diffZ = hitVec.zCoord - mc.thePlayer.posZ;
-        double dist = MathHelper.sqrt_double(diffX * diffX + diffZ * diffZ);
-        
-        float yaw = (float) (Math.atan2(diffZ, diffX) * 180.0 / Math.PI) - 90.0f;
-        float pitch = (float) (-(Math.atan2(diffY, dist) * 180.0 / Math.PI));
-        
-        return new float[]{yaw, pitch};
+    private fun getTargetRotations(pos: BlockPos): FloatArray {
+        val diffX = pos.x + 0.5 - mc.thePlayer.posX
+        val diffY = pos.y + 0.5 - (mc.thePlayer.entityBoundingBox.minY + mc.thePlayer.eyeHeight)
+        val diffZ = pos.z + 0.5 - mc.thePlayer.posZ
+        val dist = MathHelper.sqrt_double(diffX * diffX + diffZ * diffZ).toDouble()
+        val yaw = (Math.atan2(diffZ, diffX) * 180.0 / Math.PI).toFloat() - 90.0f
+        val pitch = (-(Math.atan2(diffY, dist) * 180.0 / Math.PI)).toFloat()
+        return floatArrayOf(yaw, pitch)
     }
 
-    private Vec3 getHitVec() {
-        return new Vec3(targetPos.getX() + 0.5, targetPos.getY() + 0.5, targetPos.getZ() + 0.5);
+    private fun updateRotation(current: float, target: float, maxStep: float): Float {
+        var diff = MathHelper.wrapAngleTo180_float(target - current)
+        if (diff > maxStep) diff = maxStep
+        if (diff < -maxStep) diff = -maxStep
+        return current + diff
     }
 
-    private float updateRotation(float current, float target, float maxStep) {
-        float diff = MathHelper.wrapAngleTo180_float(target - current);
-        return current + MathHelper.clamp_float(diff, -maxStep, maxStep);
-    }
-
-    private void doADStrafe() {
-        // Logic di chuyển zigzag đặc trưng của KT để bypass raycast
-        if (mc.thePlayer.ticksExisted % 2 == 0) {
-            mc.thePlayer.movementInput.moveStrafe = 0.5f;
-        } else {
-            mc.thePlayer.movementInput.moveStrafe = -0.5f;
+    private fun getBlockSlot(): Int {
+        for (i in 0..8) {
+            val stack = mc.thePlayer.inventory.getStackInSlot(i)
+            if (stack != null && stack.item is ItemBlock) return i
         }
-    }
-
-    private int getBlockSlot() {
-        for (int i = 0; i < 9; i++) {
-            ItemStack stack = mc.thePlayer.inventory.getStackInSlot(i);
-            if (stack != null && stack.getItem() instanceof ItemBlock) return i;
-        }
-        return -1;
+        return -1
     }
 }
